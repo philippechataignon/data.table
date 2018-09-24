@@ -39,10 +39,26 @@ between <- function(x,lower,upper,incbounds=TRUE, incright=incbounds) {
 
 # issue FR #707
 # is x[i] found anywhere within [lower, upper] range?
-inrange <- function(x,lower,upper,incbounds=TRUE) {
+inrange <- function(x,lower,upper,incbounds=TRUE,incright=incbounds) {
   query = setDT(list(x=x))
   subject = setDT(list(l=lower, u=upper))
-  ops = if (incbounds) c(4L, 2L) else c(5L, 3L) # >=,<= and >,<
+  ops = if (incbounds) {
+    if(incright) {
+      # >=,<=
+      c(4L, 2L)
+    } else {
+      # >, <=
+      c(4L, 3L)
+    }
+  } else {
+    if(incright) {
+      # >=,<
+      c(5L, 2L)
+    } else {
+      # >,<
+      c(5L, 3L)
+    }
+  }
   verbose = getOption("datatable.verbose")
   if (verbose) {last.started.at=proc.time();cat("forderv(query) took ... ");flush.console()}
   xo = forderv(query)

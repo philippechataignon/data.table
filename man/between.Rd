@@ -22,7 +22,7 @@ the intervals provided in \code{lower,upper}.
 between(x, lower, upper, incbounds=TRUE, incright=incbounds)
 x \%between\% y
 
-inrange(x, lower, upper, incbounds=TRUE)
+inrange(x, lower, upper, incbounds=TRUE, incright=incbounds)
 x \%inrange\% y
 }
 \arguments{
