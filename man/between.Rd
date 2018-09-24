@@ -7,14 +7,19 @@
 \description{
 Intended for use in \code{i} in \code{[.data.table}.
 
-\code{between} is equivalent to \code{x >= lower & x <= upper} when
-\code{incbounds=TRUE}, or \code{x > lower & y < upper} when \code{FALSE}.
+\code{between} is equivalent to \code{x >= lower & x <= upper} with default values.
+
+With \code{incbounds=FALSE}, it's equivalent to \code{x > lower & y < upper}.
+
+With \code{incbounds=FALSE, incright=TRUE}, it's equivalent to \code{x > lower & y <= upper}.
+
+With \code{incright=FALSE}, it's equivalent to \code{x >= lower & y < upper}.
 
 \code{inrange} checks whether each value in \code{x} is in between any of
 the intervals provided in \code{lower,upper}.
 }
 \usage{
-between(x, lower, upper, incbounds=TRUE)
+between(x, lower, upper, incbounds=TRUE, incright=incbounds)
 x \%between\% y
 
 inrange(x, lower, upper, incbounds=TRUE)
@@ -29,7 +34,12 @@ case of \code{between} and a numeric vector in case of \code{inrange}.}
 \item{y}{ A length-2 \code{vector} or \code{list}, with \code{y[[1]]}
 interpreted as \code{lower} and \code{y[[2]]} as \code{upper}.}
 \item{incbounds}{ \code{TRUE} means inclusive bounds, i.e., [lower,upper].
-\code{FALSE} means exclusive bounds, i.e., (lower,upper).
+\code{FALSE} means exclusive bounds, i.e., (lower,upper). Right bound can be
+changed by \code{incright} parameter.
+
+It is set to \code{TRUE} by default for infix notations.}
+\item{incright}{ \code{TRUE} means inclusive right bound, i.e., ,upper].
+\code{FALSE} means exclusive right bound, i.e., ,upper).
 
 It is set to \code{TRUE} by default for infix notations.}
 }
