@@ -1,4 +1,3 @@
-
 #include <stdbool.h>
 #include "data.table.h"
 #include "fwrite.h"
@@ -42,23 +41,6 @@ writer_fun_t funs[] = {
   &writeCategString,
   &writeList
 };
-
-typedef enum {   // same order as fun[] above
-  WF_Bool8,
-  WF_Bool32,
-  WF_Bool32AsString,
-  WF_Int32,
-  WF_Int64,
-  WF_Float64,
-  WF_ITime,
-  WF_DateInt32,
-  WF_DateFloat64,
-  WF_POSIXct,
-  WF_Nanotime,
-  WF_String,
-  WF_CategString,
-  WF_List
-} WFs;
 
 static int32_t whichWriter(SEXP);
 
@@ -128,10 +110,13 @@ SEXP fwriteR(
   SEXP buffMB_Arg,         // [1-1024] default 8MB
   SEXP nThread_Arg,
   SEXP showProgress_Arg,
-  SEXP verbose_Arg)
+  SEXP is_gzip_Arg,
+  SEXP verbose_Arg
+  )
 {
   if (!isNewList(DF)) error("fwrite must be passed an object of type list; e.g. data.frame, data.table");
   fwriteMainArgs args;
+  args.is_gzip = LOGICAL(is_gzip_Arg)[0];
   args.verbose = LOGICAL(verbose_Arg)[0];
   args.filename = CHAR(STRING_ELT(filename_Arg, 0));
   args.ncol = length(DF);
