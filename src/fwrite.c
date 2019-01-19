@@ -20,6 +20,8 @@
 #endif
 
 #include "zlib.h"      // for writing gzip file
+#include "lz4.h"       // for writing lz4 file
+#include "lz4frame.h"
 #include "myomp.h"
 #include "fwrite.h"
 
@@ -633,7 +635,7 @@ void fwriteMain(fwriteMainArgs args)
   size_t zbuffUsed = 0;
   void *zbuff = NULL;
 
-  if (args.is_gzip) {
+  if (args.is_gzip || args.is_lz4) {
     zbuffSize = buffSize + buffSize/10 + 16;
     zbuff = malloc(zbuffSize);
     if (!zbuff)
@@ -740,6 +742,7 @@ void fwriteMain(fwriteMainArgs args)
   if (*args.filename=='\0') {
     f=-1;  // file="" means write to standard output
     args.is_gzip = false; // gzip is only for file
+    args.is_lz4 = false; // lz4 is only for file
     // eol = "\n";  // We'll use DTPRINT which converts \n to \r\n inside it on Windows
   } else {
 #ifdef WIN32
@@ -792,13 +795,18 @@ void fwriteMain(fwriteMainArgs args)
       if(ret) {
         STOP("Compress gzip error: %d", ret);
       }
+    } else if(args.is_lz4){
+      zbuffUsed = LZ4F_compressFrame(zbuff, zbuffSize, buff, (int)(ch - buff), NULL);
+      if(zbuffUsed <= 0) {
+        STOP("Compress lz4 error: %d", zbuffUsed);
+      }
     }
 
     int errwrite = 0;
     if (f==-1) {
       *ch = '\0';
       DTPRINT(buff);
-    } else if ((args.is_gzip)) {
+    } else if ((args.is_gzip  || args.is_lz4)) {
       if (WRITE(f, zbuff, (int)zbuffUsed) == -1) {
         errwrite=errno;  // capture write errno now incase close fails with a different errno
       }
@@ -809,7 +817,7 @@ void fwriteMain(fwriteMainArgs args)
     if (errwrite) {
       CLOSE(f);
       free(buff);
-      if(args.is_gzip){
+      if(args.is_gzip || args.is_lz4){
         free(zbuff);
       }
       STOP("%s: '%s'", strerror(errwrite), args.filename);
@@ -817,7 +825,7 @@ void fwriteMain(fwriteMainArgs args)
   }
 
   free(buff);  // TODO: also to be free'd in cleanup when there's an error opening file above
-  if(args.is_gzip){
+  if(args.is_gzip || args.is_lz4){
     free(zbuff);
   }
 
@@ -865,7 +873,7 @@ void fwriteMain(fwriteMainArgs args)
     size_t myzbuffSize = 0;
     void *myzBuff = NULL;
 
-    if(args.is_gzip){
+    if(args.is_gzip || args.is_lz4){
       myzbuffSize = buffSize + buffSize/10 + 16;
       myzBuff = malloc(myzbuffSize);
       if (myzBuff==NULL) {
@@ -938,6 +946,9 @@ void fwriteMain(fwriteMainArgs args)
       if (args.is_gzip) {
         myzbuffUsed = myzbuffSize;
         failed = compressbuff(myzBuff, &myzbuffUsed, myBuff, (int)(ch - myBuff));
+      } else if (args.is_lz4) {
+        myzbuffUsed = LZ4F_compressFrame(myzBuff, myzbuffSize, myBuff, (int)(ch - myBuff), NULL);
+        failed = (myzbuffUsed <= 0);
       }
       #pragma omp ordered
       {
@@ -945,7 +956,7 @@ void fwriteMain(fwriteMainArgs args)
           if (f==-1) {
             *ch='\0';  // standard C string end marker so DTPRINT knows where to stop
             DTPRINT(myBuff);
-          } else if ((args.is_gzip)) {
+          } else if ((args.is_gzip || args.is_lz4)) {
             if (WRITE(f, myzBuff, (int)(myzbuffUsed)) == -1) {
               failed=errno;
             }
@@ -994,7 +1005,7 @@ void fwriteMain(fwriteMainArgs args)
     // all threads will call this free on their buffer, even if one or more threads had malloc
     // or realloc fail. If the initial malloc failed, free(NULL) is ok and does nothing.
     free(myBuff);
-    if (args.is_gzip) {
+    if (args.is_gzip || args.is_lz4) {
         free(myzBuff);
     }
   }
