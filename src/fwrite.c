@@ -20,6 +20,8 @@
 #endif
 
 #include "zlib.h"      // for writing gzip file
+#include "lz4.h"       // for writing lz4 file
+#include "lz4frame.h"
 #include "myomp.h"
 #include "fwrite.h"
 
@@ -546,7 +548,7 @@ int writer_len[] = {
   0, //&writeList
 };
 
-int compressbuff(Bytef* dest, uLongf* destLen, const Bytef* source, uLong sourceLen)
+int compressbuff(void* dest, size_t *destLen, const void* source, size_t sourceLen)
 {
     int level = Z_DEFAULT_COMPRESSION;
     z_stream stream;
@@ -630,10 +632,10 @@ void fwriteMain(fwriteMainArgs args)
     STOP("Unable to allocate %d MiB for buffer: %s", buffSize / 1024 / 1024, strerror(errno));
 
   size_t zbuffSize = 0;
-  uLongf zbuffUsed = 0;
-  Bytef *zbuff = NULL;
+  size_t zbuffUsed = 0;
+  void *zbuff = NULL;
 
-  if (args.is_gzip) {
+  if (args.is_gzip || args.is_lz4) {
     zbuffSize = buffSize + buffSize/10 + 16;
     zbuff = malloc(zbuffSize);
     if (!zbuff)
@@ -740,6 +742,7 @@ void fwriteMain(fwriteMainArgs args)
   if (*args.filename=='\0') {
     f=-1;  // file="" means write to standard output
     args.is_gzip = false; // gzip is only for file
+    args.is_lz4 = false; // lz4 is only for file
     // eol = "\n";  // We'll use DTPRINT which converts \n to \r\n inside it on Windows
   } else {
 #ifdef WIN32
@@ -788,9 +791,14 @@ void fwriteMain(fwriteMainArgs args)
     // compress buff into zbuff
     if(args.is_gzip){
       zbuffUsed = zbuffSize;
-      int ret = compressbuff(zbuff, &zbuffUsed, (Bytef*)buff, (int)(ch - buff));
+      int ret = compressbuff(zbuff, &zbuffUsed, buff, (int)(ch - buff));
       if(ret) {
-        STOP("Compress error: %d", ret);
+        STOP("Compress gzip error: %d", ret);
+      }
+    } else if(args.is_lz4){
+      zbuffUsed = LZ4F_compressFrame(zbuff, zbuffSize, buff, (int)(ch - buff), NULL);
+      if(zbuffUsed <= 0) {
+        STOP("Compress lz4 error: %d", zbuffUsed);
       }
     }
 
@@ -798,16 +806,18 @@ void fwriteMain(fwriteMainArgs args)
     if (f==-1) {
       *ch = '\0';
       DTPRINT(buff);
-    } else if (!args.is_gzip && WRITE(f, buff, (int)(ch-buff)) == -1) {
-      errwrite=errno;  // capture write errno now incase close fails with a different errno
-    } else if (args.is_gzip && WRITE(f, zbuff, (int)zbuffUsed) == -1) {
+    } else if ((args.is_gzip  || args.is_lz4)) {
+      if (WRITE(f, zbuff, (int)zbuffUsed) == -1) {
+        errwrite=errno;  // capture write errno now incase close fails with a different errno
+      }
+    } else if (WRITE(f, buff, (int)(ch-buff)) == -1) {
       errwrite=errno;
     }
 
     if (errwrite) {
       CLOSE(f);
       free(buff);
-      if(args.is_gzip){
+      if(args.is_gzip || args.is_lz4){
         free(zbuff);
       }
       STOP("%s: '%s'", strerror(errwrite), args.filename);
@@ -815,7 +825,7 @@ void fwriteMain(fwriteMainArgs args)
   }
 
   free(buff);  // TODO: also to be free'd in cleanup when there's an error opening file above
-  if(args.is_gzip){
+  if(args.is_gzip || args.is_lz4){
     free(zbuff);
   }
 
@@ -859,11 +869,11 @@ void fwriteMain(fwriteMainArgs args)
       failed=-errno;
     }
 
-    uLongf myzbuffUsed = 0;
+    size_t myzbuffUsed = 0;
     size_t myzbuffSize = 0;
-    Bytef *myzBuff = NULL;
+    void *myzBuff = NULL;
 
-    if(args.is_gzip){
+    if(args.is_gzip || args.is_lz4){
       myzbuffSize = buffSize + buffSize/10 + 16;
       myzBuff = malloc(myzbuffSize);
       if (myzBuff==NULL) {
@@ -935,7 +945,10 @@ void fwriteMain(fwriteMainArgs args)
       // compress buffer if gzip
       if (args.is_gzip) {
         myzbuffUsed = myzbuffSize;
-        failed = compressbuff(myzBuff, &myzbuffUsed, (Bytef*)myBuff, (int)(ch - myBuff));
+        failed = compressbuff(myzBuff, &myzbuffUsed, myBuff, (int)(ch - myBuff));
+      } else if (args.is_lz4) {
+        myzbuffUsed = LZ4F_compressFrame(myzBuff, myzbuffSize, myBuff, (int)(ch - myBuff), NULL);
+        failed = (myzbuffUsed <= 0);
       }
       #pragma omp ordered
       {
@@ -943,9 +956,11 @@ void fwriteMain(fwriteMainArgs args)
           if (f==-1) {
             *ch='\0';  // standard C string end marker so DTPRINT knows where to stop
             DTPRINT(myBuff);
-          } else if (!args.is_gzip && WRITE(f, myBuff, (int)(ch - myBuff)) == -1) {
+          } else if ((args.is_gzip || args.is_lz4)) {
+            if (WRITE(f, myzBuff, (int)(myzbuffUsed)) == -1) {
               failed=errno;
-          } else if (args.is_gzip && WRITE(f, myzBuff, (int)(myzbuffUsed)) == -1) {
+            }
+          } else if (WRITE(f, myBuff, (int)(ch - myBuff)) == -1) {
               failed=errno;
           }
 
@@ -990,7 +1005,7 @@ void fwriteMain(fwriteMainArgs args)
     // all threads will call this free on their buffer, even if one or more threads had malloc
     // or realloc fail. If the initial malloc failed, free(NULL) is ok and does nothing.
     free(myBuff);
-    if (args.is_gzip) {
+    if (args.is_gzip || args.is_lz4) {
         free(myzBuff);
     }
   }

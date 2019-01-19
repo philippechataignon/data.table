@@ -7,7 +7,7 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
            dateTimeAs = c("ISO","squash","epoch","write.csv"),
            buffMB=8, nThread=getDTthreads(verbose),
            showProgress=getOption("datatable.showProgress", interactive()),
-           compress = c("auto", "none", "gzip"), 
+           compress = c("auto", "none", "gzip", "lz4"), 
            verbose=getOption("datatable.verbose", FALSE)
            ) {
   isLOGICAL = function(x) isTRUE(x) || identical(FALSE, x)  # it seems there is no isFALSE in R?
@@ -41,7 +41,7 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
     dec != sep,  # sep2!=dec and sep2!=sep checked at C level when we know if list columns are present
     is.character(eol) && length(eol)==1L,
     length(qmethod) == 1L && qmethod %chin% c("double", "escape"),
-    length(compress) == 1L && compress %chin% c("auto", "none", "gzip"),
+    length(compress) == 1L && compress %chin% c("auto", "none", "gzip", "lz4"),
     isLOGICAL(col.names), isLOGICAL(append), isLOGICAL(row.names),
     isLOGICAL(verbose), isLOGICAL(showProgress), isLOGICAL(logical01),
     length(na) == 1L, #1725, handles NULL or character(0) input
@@ -51,6 +51,7 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
     )
   
   is_gzip <- compress == "gzip" || (compress == "auto" && grepl("\\.gz$", file))
+  is_lz4 <- compress == "lz4" || (compress == "auto" && grepl("\\.lz4$", file))
   
   file <- path.expand(file)  # "~/foo/bar"
   if (append && missing(col.names) && (file=="" || file.exists(file)))
@@ -78,6 +79,6 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
   file <- enc2native(file) # CfwriteR cannot handle UTF-8 if that is not the native encoding, see #3078.
   .Call(CfwriteR, x, file, sep, sep2, eol, na, dec, quote, qmethod=="escape", append,
           row.names, col.names, logical01, dateTimeAs, buffMB, nThread,
-          showProgress, is_gzip, verbose)
+          showProgress, is_gzip, is_lz4, verbose)
   invisible()
 }

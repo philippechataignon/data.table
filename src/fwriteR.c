@@ -111,12 +111,14 @@ SEXP fwriteR(
   SEXP nThread_Arg,
   SEXP showProgress_Arg,
   SEXP is_gzip_Arg,
+  SEXP is_lz4_Arg,
   SEXP verbose_Arg
   )
 {
   if (!isNewList(DF)) error("fwrite must be passed an object of type list; e.g. data.frame, data.table");
   fwriteMainArgs args;
   args.is_gzip = LOGICAL(is_gzip_Arg)[0];
+  args.is_lz4 = LOGICAL(is_lz4_Arg)[0];
   args.verbose = LOGICAL(verbose_Arg)[0];
   args.filename = CHAR(STRING_ELT(filename_Arg, 0));
   args.ncol = length(DF);
