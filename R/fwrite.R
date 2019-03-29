@@ -34,7 +34,7 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
     x <- as.data.table(x)
   }
   stopifnot(is.list(x),
-    identical(quote,"auto") || identical(quote,FALSE) || identical(quote,TRUE),
+    identical(quote,"auto") || isTRUEorFALSE(quote),
     is.character(sep) && length(sep)==1L && nchar(sep) == 1L,
     is.character(sep2) && length(sep2)==3L && nchar(sep2[2L])==1L,
     is.character(dec) && length(dec)==1L && nchar(dec) == 1L,
@@ -42,8 +42,6 @@ fwrite <- function(x, file="", append=FALSE, quote="auto",
     is.character(eol) && length(eol)==1L,
     length(qmethod) == 1L && qmethod %chin% c("double", "escape"),
     length(compress) == 1L && compress %chin% c("auto", "none", "gzip", "lz4"),
-    isLOGICAL(col.names), isLOGICAL(append), isLOGICAL(row.names),
-    isLOGICAL(verbose), isLOGICAL(showProgress), isLOGICAL(logical01),
     length(na) == 1L, #1725, handles NULL or character(0) input
     is.character(file) && length(file)==1L && !is.na(file),
     length(buffMB)==1L && !is.na(buffMB) && 1L<=buffMB && buffMB<=1024,
