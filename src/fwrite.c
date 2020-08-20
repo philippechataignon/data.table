@@ -707,6 +707,7 @@ void fwriteMain(fwriteMainArgs args)
     scipen = args.scipen;
     doQuote = args.doQuote;
     verbose = args.verbose;
+    int zstd_level = 1;
 
     // When NA is a non-empty string, then we must quote all string fields in case they contain the na string
     // na is recommended to be empty, though
@@ -882,7 +883,7 @@ void fwriteMain(fwriteMainArgs args)
                     STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
                 }
                 size_t const zbuffUsed =
-                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), 1);
+                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), zstd_level);
                 ret2 = WRITE(f, zbuff, (int)zbuffUsed);
                 free(zbuff);
             } else {
@@ -1018,7 +1019,7 @@ void fwriteMain(fwriteMainArgs args)
             }
             // compress buffer if gzip
             if (args.is_gzip && !failed) {
-                myzbuffUsed = ZSTD_compress(myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), 1);
+                myzbuffUsed = ZSTD_compress(myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), zstd_level);
                 // DTPRINT("MZBU:%d MZBS:%d S:%d\n", myzbuffUsed, zbuffSize, ch - myBuff);
             }
 #pragma omp ordered
