@@ -707,7 +707,7 @@ void fwriteMain(fwriteMainArgs args)
     scipen = args.scipen;
     doQuote = args.doQuote;
     verbose = args.verbose;
-    int zstd_level = 1;
+    int zstd_level = 0;
 
     // When NA is a non-empty string, then we must quote all string fields in case they contain the na string
     // na is recommended to be empty, though
@@ -982,8 +982,10 @@ void fwriteMain(fwriteMainArgs args)
         void *myzBuff = NULL;
         size_t myzbuffUsed = 0;
         z_stream mystream;
+        ZSTD_CCtx* cctx;
         if (args.is_gzip) {
             myzBuff = zbuffPool + me * zbuffSize;
+            cctx = ZSTD_createCCtx();
         }
 
 #pragma omp for ordered schedule(dynamic)
@@ -1019,8 +1021,7 @@ void fwriteMain(fwriteMainArgs args)
             }
             // compress buffer if gzip
             if (args.is_gzip && !failed) {
-                myzbuffUsed = ZSTD_compress(myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), zstd_level);
-                // DTPRINT("MZBU:%d MZBS:%d S:%d\n", myzbuffUsed, zbuffSize, ch - myBuff);
+                myzbuffUsed = ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), zstd_level);
             }
 #pragma omp ordered
             {
