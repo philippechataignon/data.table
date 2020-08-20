@@ -162,6 +162,8 @@ SEXP fwriteR(
   SEXP nThread_Arg,
   SEXP showProgress_Arg,
   SEXP is_gzip_Arg,
+  SEXP is_zstd_Arg,
+  SEXP compressLevel_Arg,
   SEXP bom_Arg,
   SEXP yaml_Arg,
   SEXP verbose_Arg
@@ -170,6 +172,7 @@ SEXP fwriteR(
   if (!isNewList(DF)) error(_("fwrite must be passed an object of type list; e.g. data.frame, data.table"));
   fwriteMainArgs args;
   args.is_gzip = LOGICAL(is_gzip_Arg)[0];
+  args.is_zstd = LOGICAL(is_zstd_Arg)[0];
   args.bom = LOGICAL(bom_Arg)[0];
   args.yaml = CHAR(STRING_ELT(yaml_Arg, 0));
   args.verbose = LOGICAL(verbose_Arg)[0];
@@ -282,6 +285,7 @@ SEXP fwriteR(
   args.append = LOGICAL(append_Arg)[0];
   args.buffMB = INTEGER(buffMB_Arg)[0];
   args.nth = INTEGER(nThread_Arg)[0];
+  args.compressLevel = INTEGER(compressLevel_Arg)[0];
   args.showProgress = LOGICAL(showProgress_Arg)[0];
 
   fwriteMain(args);
