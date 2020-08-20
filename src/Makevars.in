@@ -1,5 +1,5 @@
 PKG_CFLAGS = @openmp_cflags@
-PKG_LIBS = @openmp_cflags@ -lz
+PKG_LIBS = @openmp_cflags@ -lz -lzstd
 
 all: $(SHLIB)
 	if [ "$(SHLIB)" != "datatable$(SHLIB_EXT)" ]; then mv $(SHLIB) datatable$(SHLIB_EXT); fi

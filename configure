@@ -25,6 +25,31 @@ if [ $? -ne 0 ]; then
   echo "*** pkg-config is not installed."
   msg=1
 else
+  pkg-config --exists libzstd
+  if [ $? -ne 0 ]; then
+    echo "*** pkg-config is installed but 'pkg-config --exists libzstd' did not return 0."
+    msg=1
+  else
+    lib=`pkg-config --libs libzstd`
+    expr "$lib" : ".*-lzstd$" >/dev/null
+    if [ $? -ne 0 ]; then
+      expr "$lib" : ".*-lzstd " >/dev/null
+      # would use \b in one expr but MacOS does not support \b
+      if [ $? -ne 0 ]; then
+        echo "*** pkg-config is installed and 'pkg-config --exists libzstd' succeeds but"
+        echo "*** 'pkg-config --libs libzstd' returns '${lib}' which does not include the standard -lz."
+        msg=1
+      fi
+    fi
+  fi
+fi
+
+msg=0
+pkg-config --version >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "*** pkg-config is not installed."
+  msg=1
+else
   pkg-config --exists zlib
   if [ $? -ne 0 ]; then
     echo "*** pkg-config is installed but 'pkg-config --exists zlib' did not return 0."
@@ -62,6 +87,8 @@ if [ $msg -ne 0 ]; then
   exit 0
 fi
 
+version=`pkg-config --modversion libzstd`
+echo "libzstd ${version} is available ok"
 version=`pkg-config --modversion zlib`
 echo "zlib ${version} is available ok"
 
