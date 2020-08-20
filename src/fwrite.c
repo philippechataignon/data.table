@@ -41,6 +41,7 @@ static bool qmethodEscape = false;      // when quoting fields, how to escape do
 static int scipen;
 static bool squashDateTime = false;     // 0=ISO(yyyy-mm-dd) 1=squash(yyyymmdd)
 static bool verbose = false;
+static int8_t compressLevel = 0;
 
 extern const char *getString(const void *, int64_t);
 extern int getStringLen(const void *, int64_t);
@@ -707,7 +708,7 @@ void fwriteMain(fwriteMainArgs args)
     scipen = args.scipen;
     doQuote = args.doQuote;
     verbose = args.verbose;
-    int zstd_level = 0;
+    compressLevel = args.compressLevel;
 
     // When NA is a non-empty string, then we must quote all string fields in case they contain the na string
     // na is recommended to be empty, though
@@ -883,7 +884,7 @@ void fwriteMain(fwriteMainArgs args)
                     STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
                 }
                 size_t const zbuffUsed =
-                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), zstd_level);
+                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), compressLevel);
                 ret2 = WRITE(f, zbuff, (int)zbuffUsed);
                 free(zbuff);
             } else {
@@ -1021,7 +1022,7 @@ void fwriteMain(fwriteMainArgs args)
             }
             // compress buffer if gzip
             if (args.is_gzip && !failed) {
-                myzbuffUsed = ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), zstd_level);
+                myzbuffUsed = ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), compressLevel);
             }
 #pragma omp ordered
             {

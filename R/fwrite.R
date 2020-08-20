@@ -9,6 +9,7 @@ fwrite = function(x, file="", append=FALSE, quote="auto",
            buffMB=8, nThread=getDTthreads(verbose),
            showProgress=getOption("datatable.showProgress", interactive()),
            compress = c("auto", "none", "gzip"),
+           compressLevel = 0,
            yaml = FALSE,
            bom = FALSE,
            verbose=getOption("datatable.verbose", FALSE)) {
@@ -27,6 +28,7 @@ fwrite = function(x, file="", append=FALSE, quote="auto",
     logicalAsInt=NULL
   }
   scipen = if (is.numeric(scipen)) as.integer(scipen) else 0L
+  compressLevel = as.integer(compressLevel)
   buffMB = as.integer(buffMB)
   nThread = as.integer(nThread)
   # write.csv default is 'double' so fwrite follows suit. write.table's default is 'escape'
@@ -108,7 +110,7 @@ fwrite = function(x, file="", append=FALSE, quote="auto",
   file = enc2native(file) # CfwriteR cannot handle UTF-8 if that is not the native encoding, see #3078.
   .Call(CfwriteR, x, file, sep, sep2, eol, na, dec, quote, qmethod=="escape", append,
         row.names, col.names, logical01, scipen, dateTimeAs, buffMB, nThread,
-        showProgress, is_gzip, bom, yaml, verbose)
+        showProgress, is_gzip, compressLevel, bom, yaml, verbose)
   invisible()
 }
 

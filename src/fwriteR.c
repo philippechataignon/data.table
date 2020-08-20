@@ -162,6 +162,7 @@ SEXP fwriteR(
   SEXP nThread_Arg,
   SEXP showProgress_Arg,
   SEXP is_gzip_Arg,
+  SEXP compressLevel_Arg,
   SEXP bom_Arg,
   SEXP yaml_Arg,
   SEXP verbose_Arg
@@ -282,6 +283,7 @@ SEXP fwriteR(
   args.append = LOGICAL(append_Arg)[0];
   args.buffMB = INTEGER(buffMB_Arg)[0];
   args.nth = INTEGER(nThread_Arg)[0];
+  args.compressLevel = INTEGER(compressLevel_Arg)[0];
   args.showProgress = LOGICAL(showProgress_Arg)[0];
 
   fwriteMain(args);
