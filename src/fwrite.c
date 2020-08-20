@@ -665,9 +665,8 @@ int GZ_init_stream(z_stream * stream)
     stream->opaque = Z_NULL;
 
     // 31 comes from : windows bits 15 | 16 gzip format
-    int err =
-        deflateInit2(stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
-                     Z_DEFAULT_STRATEGY);
+    int err = deflateInit2(stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+                           Z_DEFAULT_STRATEGY);
     return err;                 // # nocov
 }
 
@@ -795,12 +794,12 @@ void fwriteMain(fwriteMainArgs args)
     if (*args.filename == '\0') {
         f = -1;                 // file="" means write to standard output
         args.is_gzip = false;   // gzip is only for file
+        args.is_zstd = false;   // zstd is only for file
         // eol = "\n";  // We'll use DTPRINT which converts \n to \r\n inside it on Windows
     } else {
 #ifdef WIN32
         f = _open(args.filename,
-                  _O_WRONLY | _O_BINARY | _O_CREAT | (args.
-                                                      append ? _O_APPEND :
+                  _O_WRONLY | _O_BINARY | _O_CREAT | (args.append ? _O_APPEND :
                                                       _O_TRUNC), _S_IWRITE);
         // O_BINARY rather than O_TEXT for explicit control and speed since it seems that write() has a branch inside it
         // to convert \n to \r\n on Windows when in text mode not not when in binary mode.
@@ -876,7 +875,7 @@ void fwriteMain(fwriteMainArgs args)
             free(buff);
         } else {
             int ret1 = 0, ret2 = 0;
-            if (args.is_gzip) {
+            if (args.is_zstd) {
                 size_t const zbuffSize = ZSTD_compressBound(headerLen);
                 char *zbuff = malloc(zbuffSize);
                 if (!zbuff) {
@@ -884,8 +883,29 @@ void fwriteMain(fwriteMainArgs args)
                     STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
                 }
                 size_t const zbuffUsed =
-                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), compressLevel);
+                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff),
+                                  compressLevel);
                 ret2 = WRITE(f, zbuff, (int)zbuffUsed);
+                free(zbuff);
+            } else if (args.is_gzip) {
+                z_stream stream = { 0 };
+                if (GZ_init_stream(&stream)) {
+                    free(buff); // # nocov
+                    STOP(_("Can't allocate gzip stream structure"));    // # nocov
+                }
+                size_t zbuffSize = deflateBound(&stream, headerLen);
+                char *zbuff = malloc(zbuffSize);
+                if (!zbuff) {
+                    free(buff); // # nocov
+                    STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
+                }
+                size_t zbuffUsed = zbuffSize;
+                ret1 =
+                    GZ_compressbuff(&stream, zbuff, &zbuffUsed, buff,
+                                    (size_t)(ch - buff));
+                if (ret1 == Z_OK)
+                    ret2 = WRITE(f, zbuff, (int)zbuffUsed);
+                deflateEnd(&stream);
                 free(zbuff);
             } else {
                 ret2 = WRITE(f, buff, (int)(ch - buff));
@@ -943,6 +963,13 @@ void fwriteMain(fwriteMainArgs args)
     // compute zbuffSize which is the same for each thread
     size_t zbuffSize = 0;
     if (args.is_gzip) {
+        z_stream stream = { 0 };
+        if (GZ_init_stream(&stream))
+            STOP(_("Can't allocate gzip stream structure"));    // # nocov
+        zbuffSize = deflateBound(&stream, buffSize);
+        deflateEnd(&stream);
+    }
+    if (args.is_zstd) {
         zbuffSize = ZSTD_compressBound(buffSize);
     }
 
@@ -955,7 +982,7 @@ void fwriteMain(fwriteMainArgs args)
     }
     // alloc unique buffer for all threads
     char *zbuffPool = NULL;
-    if (args.is_gzip) {
+    if (args.is_gzip || args.is_zstd) {
         zbuffPool = malloc(nth * (size_t)zbuffSize);
         if (!zbuffPool) {
             // # nocov start
@@ -983,8 +1010,15 @@ void fwriteMain(fwriteMainArgs args)
         void *myzBuff = NULL;
         size_t myzbuffUsed = 0;
         z_stream mystream;
-        ZSTD_CCtx* cctx;
+        ZSTD_CCtx *cctx;
         if (args.is_gzip) {
+            myzBuff = zbuffPool + me * zbuffSize;
+            if (GZ_init_stream(&mystream)) {    // this should be thread safe according to zlib documentation
+                failed = true;  // # nocov
+                my_failed_compress = -998;      // # nocov
+            }
+        }
+        if (args.is_zstd) {
             myzBuff = zbuffPool + me * zbuffSize;
             cctx = ZSTD_createCCtx();
         }
@@ -1020,9 +1054,23 @@ void fwriteMain(fwriteMainArgs args)
                 ch--;           // backup onto the last sep after the last column. ncol>=1 because 0-columns was caught earlier.
                 write_chars(args.eol, &ch);     // overwrite last sep with eol instead
             }
+            // compress buffer zstd
+            if (args.is_zstd && !failed) {
+                myzbuffUsed =
+                    ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff,
+                                      (size_t)(ch - myBuff), compressLevel);
+            }
             // compress buffer if gzip
             if (args.is_gzip && !failed) {
-                myzbuffUsed = ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff, (size_t)(ch - myBuff), compressLevel);
+                myzbuffUsed = zbuffSize;
+                int ret =
+                    GZ_compressbuff(&mystream, myzBuff, &myzbuffUsed, myBuff,
+                                    (size_t)(ch - myBuff));
+                if (ret) {
+                    failed = true;
+                    my_failed_compress = ret;
+                } else
+                    deflateReset(&mystream);
             }
 #pragma omp ordered
             {
@@ -1040,7 +1088,7 @@ void fwriteMain(fwriteMainArgs args)
                     if (f == -1) {
                         *ch = '\0';     // standard C string end marker so DTPRINT knows where to stop
                         DTPRINT(myBuff);
-                    } else if ((args.is_gzip ?
+                    } else if ((args.is_zstd || args.is_gzip ?
                                 WRITE(f, myzBuff, myzbuffUsed)
                                 : WRITE(f, myBuff, (ch - myBuff))) == -1) {
                         failed = true;  // # nocov
@@ -1058,7 +1106,9 @@ void fwriteMain(fwriteMainArgs args)
                         // master thread (me==0) and hopefully this will work on Windows. If not, user should set
                         // showProgress=FALSE until this can be fixed or removed.
                         // # nocov start
-                        int ETA = (int)((args.nrow - end) * ((now - startTime) / end));
+                        int ETA =
+                            (int)((args.nrow -
+                                   end) * ((now - startTime) / end));
                         if (hasPrinted || ETA >= 2) {
                             if (verbose && !hasPrinted)
                                 DTPRINT("\n");
