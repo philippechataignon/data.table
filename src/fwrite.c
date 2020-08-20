@@ -951,6 +951,7 @@ void fwriteMain(fwriteMainArgs args)
         STOP("Unable to allocate %d MB * %d thread buffers; '%d: %s'. Please read ?fwrite for nThread, buffMB and verbose options.", (size_t)buffSize / (1024 ^ 2), nth, errno, strerror(errno));
         // # nocov end
     }
+    // alloc unique buffer for all threads
     char *zbuffPool = NULL;
     if (args.is_gzip) {
         zbuffPool = malloc(nth * (size_t)zbuffSize);
@@ -974,8 +975,8 @@ void fwriteMain(fwriteMainArgs args)
     {
         int me = omp_get_thread_num();
         int my_failed_compress = 0;
-        char *ch, *myBuff;
-        ch = myBuff = buffPool + me * buffSize;
+        char *myBuff = buffPool + me * buffSize;
+        char *ch = myBuff;
 
         void *myzBuff = NULL;
         size_t myzbuffUsed = 0;
@@ -1037,8 +1038,8 @@ void fwriteMain(fwriteMainArgs args)
                         *ch = '\0';     // standard C string end marker so DTPRINT knows where to stop
                         DTPRINT(myBuff);
                     } else if ((args.is_gzip ?
-                                WRITE(f, myzBuff, (int)myzbuffUsed)
-                                : WRITE(f, myBuff, (int)(ch - myBuff))) == -1) {
+                                WRITE(f, myzBuff, myzbuffUsed)
+                                : WRITE(f, myBuff, (ch - myBuff))) == -1) {
                         failed = true;  // # nocov
                         failed_write = errno;   // # nocov
                     }
@@ -1054,9 +1055,7 @@ void fwriteMain(fwriteMainArgs args)
                         // master thread (me==0) and hopefully this will work on Windows. If not, user should set
                         // showProgress=FALSE until this can be fixed or removed.
                         // # nocov start
-                        int ETA =
-                            (int)((args.nrow -
-                                   end) * ((now - startTime) / end));
+                        int ETA = (int)((args.nrow - end) * ((now - startTime) / end));
                         if (hasPrinted || ETA >= 2) {
                             if (verbose && !hasPrinted)
                                 DTPRINT("\n");
