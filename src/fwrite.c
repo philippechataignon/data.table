@@ -552,7 +552,7 @@ void writeCategString(const void *col, int64_t row, char **pch)
   write_string(getCategString(col, row), pch);
 }
 
-int init_stream(z_stream *stream) {
+int GZ_init_stream(z_stream *stream) {
   stream->next_in = Z_NULL;
   stream->zalloc = Z_NULL;
   stream->zfree = Z_NULL;
@@ -563,7 +563,7 @@ int init_stream(z_stream *stream) {
   return err;  // # nocov
 }
 
-int compressbuff(z_stream *stream, void* dest, size_t *destLen, const void* source, size_t sourceLen)
+int GZ_compressbuff(z_stream *stream, void* dest, size_t *destLen, const void* source, size_t sourceLen)
 {
   stream->next_out = dest;
   stream->avail_out = *destLen;
@@ -579,15 +579,6 @@ int compressbuff(z_stream *stream, void* dest, size_t *destLen, const void* sour
   }
   *destLen = stream->total_out;
   return err == Z_STREAM_END ? Z_OK : err;
-}
-
-void print_z_stream(const z_stream *s)   // temporary tracing function for #4099
-{
-  const unsigned char *byte = (unsigned char *)s;
-  for (int i=0; i<sizeof(z_stream); ++i) {
-    DTPRINT("%02x ", byte[i]);
-  }
-  DTPRINT("\n");
 }
 
 void fwriteMain(fwriteMainArgs args)
@@ -736,11 +727,10 @@ void fwriteMain(fwriteMainArgs args)
       int ret1=0, ret2=0;
       if (args.is_gzip) {
         z_stream stream;
-        if(init_stream(&stream)) {
+        if(GZ_init_stream(&stream)) {
           free(buff);                                    // # nocov
           STOP(_("Can't allocate gzip stream structure"));  // # nocov
         }
-        if (verbose) {DTPRINT("z_stream for header (1): "); print_z_stream(&stream);}
         size_t zbuffSize = deflateBound(&stream, headerLen);
         char *zbuff = malloc(zbuffSize);
         if (!zbuff) {
@@ -748,8 +738,7 @@ void fwriteMain(fwriteMainArgs args)
           STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));  // # nocov
         }
         size_t zbuffUsed = zbuffSize;
-        ret1 = compressbuff(&stream, zbuff, &zbuffUsed, buff, (size_t)(ch-buff));
-        if (verbose) {DTPRINT("z_stream for header (2): "); print_z_stream(&stream);}
+        ret1 = GZ_compressbuff(&stream, zbuff, &zbuffUsed, buff, (size_t)(ch-buff));
         if (ret1==Z_OK) ret2 = WRITE(f, zbuff, (int)zbuffUsed);
         deflateEnd(&stream);
         free(zbuff);
@@ -799,7 +788,7 @@ void fwriteMain(fwriteMainArgs args)
   size_t zbuffSize = 0;
   if(args.is_gzip){
     z_stream stream;
-    if(init_stream(&stream))
+    if(GZ_init_stream(&stream))
       STOP(_("Can't allocate gzip stream structure")); // # nocov
     zbuffSize = deflateBound(&stream, buffSize);
     deflateEnd(&stream);
@@ -830,7 +819,7 @@ void fwriteMain(fwriteMainArgs args)
   char failed_msg[1001] = "";  // to hold zlib's msg; copied out of zlib in ordered section just in case the msg is allocated within zlib
   int failed_write = 0;    // same. could use +ve and -ve in the same code but separate it out to trace Solaris problem, #3931
 
-  if (nth>1) verbose=false; // printing isn't thread safe (there's a temporary print in compressbuff for tracing solaris; #4099)
+  if (nth>1) verbose=false; // printing isn't thread safe (there's a temporary print in GZ_compressbuff for tracing solaris; #4099)
 
   #pragma omp parallel num_threads(nth)
   {
@@ -844,11 +833,10 @@ void fwriteMain(fwriteMainArgs args)
     z_stream mystream;
     if (args.is_gzip) {
       myzBuff = zbuffPool + me*zbuffSize;
-      if (init_stream(&mystream)) { // this should be thread safe according to zlib documentation
+      if (GZ_init_stream(&mystream)) { // this should be thread safe according to zlib documentation
         failed = true;              // # nocov
         my_failed_compress = -998;  // # nocov
       }
-      if (verbose) {DTPRINT("z_stream for data (1): "); print_z_stream(&mystream);}
     }
 
     #pragma omp for ordered schedule(dynamic)
@@ -880,9 +868,7 @@ void fwriteMain(fwriteMainArgs args)
       // compress buffer if gzip
       if (args.is_gzip && !failed) {
         myzbuffUsed = zbuffSize;
-        if (verbose) {DTPRINT("z_stream for data (2): "); print_z_stream(&mystream);}
-        int ret = compressbuff(&mystream, myzBuff, &myzbuffUsed, myBuff, (size_t)(ch-myBuff));
-        if (verbose) {DTPRINT("z_stream for data (3): "); print_z_stream(&mystream);}
+        int ret = GZ_compressbuff(&mystream, myzBuff, &myzbuffUsed, myBuff, (size_t)(ch-myBuff));
         if (ret) { failed=true; my_failed_compress=ret; }
         else deflateReset(&mystream);
       }
