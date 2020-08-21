@@ -677,16 +677,7 @@ int GZ_compressbuff(z_stream * stream, void *dest, size_t *destLen,
     stream->avail_out = *destLen;
     stream->next_in = (Bytef *) source; // don't use z_const anywhere; #3939
     stream->avail_in = sourceLen;
-    if (verbose)
-        DTPRINT("deflate input stream: %p %d %p %d\n", stream->next_out,
-                (int)(stream->avail_out), stream->next_in,
-                (int)(stream->avail_in));
-
     int err = deflate(stream, Z_FINISH);
-    if (verbose)
-        DTPRINT
-            ("deflate returned %d with stream->total_out==%d; Z_FINISH==%d, Z_OK==%d, Z_STREAM_END==%d\n",
-             err, (int)(stream->total_out), Z_FINISH, Z_OK, Z_STREAM_END);
     if (err == Z_OK) {
         // with Z_FINISH, deflate must return Z_STREAM_END if correct, otherwise it's an error and we shouldn't return Z_OK (0)
         err = -9;               // # nocov
@@ -874,44 +865,41 @@ void fwriteMain(fwriteMainArgs args)
             DTPRINT(buff);
             free(buff);
         } else {
-            int ret1 = 0, ret2 = 0;
-            if (args.is_zstd) {
-                size_t const zbuffSize = ZSTD_compressBound(headerLen);
-                char *zbuff = malloc(zbuffSize);
-                if (!zbuff) {
-                    free(buff); // # nocov
-                    STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
-                }
-                size_t const zbuffUsed =
-                    ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff),
-                                  compressLevel);
-                ret2 = WRITE(f, zbuff, (int)zbuffUsed);
-                free(zbuff);
-            } else if (args.is_gzip) {
+            int ret2 = 0;
+            bool is_ok = true;
+            if (args.is_zstd || args.is_gzip) {
+                size_t zbuffSize;
                 z_stream stream = { 0 };
-                if (GZ_init_stream(&stream)) {
-                    free(buff); // # nocov
-                    STOP(_("Can't allocate gzip stream structure"));    // # nocov
+                if (args.is_gzip) {
+                    if (GZ_init_stream(&stream)) {
+                        free(buff); // # nocov
+                        STOP(_("Can't allocate gzip stream structure"));    // # nocov
+                    }
                 }
-                size_t zbuffSize = deflateBound(&stream, headerLen);
+                zbuffSize = args.is_gzip ? deflateBound(&stream, headerLen) : ZSTD_compressBound(headerLen);
                 char *zbuff = malloc(zbuffSize);
                 if (!zbuff) {
                     free(buff); // # nocov
                     STOP(_("Unable to allocate %d MiB for zbuffer: %s"), zbuffSize / 1024 / 1024, strerror(errno));     // # nocov
                 }
                 size_t zbuffUsed = zbuffSize;
-                ret1 =
-                    GZ_compressbuff(&stream, zbuff, &zbuffUsed, buff,
-                                    (size_t)(ch - buff));
-                if (ret1 == Z_OK)
+                if (args.is_gzip) {
+                    int ret1 = GZ_compressbuff(&stream, zbuff, &zbuffUsed, buff, (size_t)(ch - buff));
+                    is_ok = (ret1 == Z_OK);
+                } else if (args.is_zstd) {
+                    zbuffUsed = ZSTD_compress(zbuff, zbuffSize, buff, (size_t)(ch - buff), compressLevel);
+                    is_ok = !ZSTD_isError(zbuffUsed);
+                }
+                if (is_ok)
                     ret2 = WRITE(f, zbuff, (int)zbuffUsed);
-                deflateEnd(&stream);
+                if (args.is_gzip)
+                    deflateEnd(&stream);
                 free(zbuff);
             } else {
                 ret2 = WRITE(f, buff, (int)(ch - buff));
             }
             free(buff);
-            if (ret1 || ret2 == -1) {
+            if (!is_ok || ret2 == -1) {
                 // # nocov start
                 int errwrite = errno;   // capture write errno now incase close fails with a different errno
                 CLOSE(f);
@@ -1011,15 +999,16 @@ void fwriteMain(fwriteMainArgs args)
         size_t myzbuffUsed = 0;
         z_stream mystream;
         ZSTD_CCtx *cctx;
-        if (args.is_gzip) {
+        if (args.is_gzip || args.is_zstd)
             myzBuff = zbuffPool + me * zbuffSize;
+
+        if (args.is_gzip) {
             if (GZ_init_stream(&mystream)) {    // this should be thread safe according to zlib documentation
                 failed = true;  // # nocov
                 my_failed_compress = -998;      // # nocov
             }
         }
         if (args.is_zstd) {
-            myzBuff = zbuffPool + me * zbuffSize;
             cctx = ZSTD_createCCtx();
         }
 
@@ -1056,15 +1045,17 @@ void fwriteMain(fwriteMainArgs args)
             }
             // compress buffer zstd
             if (args.is_zstd && !failed) {
-                myzbuffUsed =
-                    ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff,
+                myzbuffUsed = ZSTD_compressCCtx(cctx, myzBuff, zbuffSize, myBuff,
                                       (size_t)(ch - myBuff), compressLevel);
+                if (ZSTD_isError(myzbuffUsed)) {
+                    failed = true;
+                    my_failed_compress = myzbuffUsed;
+                }
             }
             // compress buffer if gzip
             if (args.is_gzip && !failed) {
                 myzbuffUsed = zbuffSize;
-                int ret =
-                    GZ_compressbuff(&mystream, myzBuff, &myzbuffUsed, myBuff,
+                int ret = GZ_compressbuff(&mystream, myzBuff, &myzbuffUsed, myBuff,
                                     (size_t)(ch - myBuff));
                 if (ret) {
                     failed = true;
