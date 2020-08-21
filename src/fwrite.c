@@ -665,7 +665,7 @@ int GZ_init_stream(z_stream * stream)
     stream->opaque = Z_NULL;
 
     // 31 comes from : windows bits 15 | 16 gzip format
-    int err = deflateInit2(stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8,
+    int err = deflateInit2(stream, compressLevel, Z_DEFLATED, 31, 8,
                            Z_DEFAULT_STRATEGY);
     return err;                 // # nocov
 }
@@ -699,6 +699,8 @@ void fwriteMain(fwriteMainArgs args)
     doQuote = args.doQuote;
     verbose = args.verbose;
     compressLevel = args.compressLevel;
+    if (args.is_gzip && compressLevel == 0)
+        compressLevel = Z_DEFAULT_COMPRESSION;
 
     // When NA is a non-empty string, then we must quote all string fields in case they contain the na string
     // na is recommended to be empty, though
