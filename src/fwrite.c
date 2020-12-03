@@ -33,6 +33,7 @@
 // Globals for this file only. Written once to hold parameters passed from R level.
 static const char *na;                 // by default "" or if set (not recommended) then usually "NA"
 static char sep;                       // comma in .csv files
+static uint8_t lensep;
 static char sep2;                      // '|' within list columns. Used here to know if field should be quoted and in freadR.c to write sep2 in list columns
 static char dec;                       // the '.' in the number 3.1416. In Europe often: 3,1416
 static int8_t doQuote=INT8_MIN;        // whether to surround fields with double quote ". NA means 'auto' (default)
@@ -622,6 +623,7 @@ void fwriteMain(fwriteMainArgs args)
 
   na = args.na;
   sep = args.sep;
+  lensep = sep == '\0' ? 0 : 1;
   sep2 = args.sep2;
   dec = args.dec;
   scipen = args.scipen;
@@ -653,8 +655,8 @@ void fwriteMain(fwriteMainArgs args)
       DTPRINT(_("... "));
       for (int j=args.ncol-10; j<args.ncol; j++) DTPRINT(_("%d "), args.whichFun[j]);
     }
-    DTPRINT(_("\nargs.doRowNames=%d args.rowNames=%d doQuote=%d args.nrow=%"PRId64" args.ncol=%d eolLen=%d\n"),
-          args.doRowNames, args.rowNames, doQuote, args.nrow, args.ncol, eolLen);
+    DTPRINT(_("\nargs.doRowNames=%d args.rowNames=%d doQuote=%d args.nrow=%"PRId64" args.ncol=%d eolLen=%d lensep=%d\n"),
+          args.doRowNames, args.rowNames, doQuote, args.nrow, args.ncol, eolLen, lensep);
   }
 
   // Calculate upper bound for line length. Numbers use a fixed maximum (e.g. 12 for integer) while strings find the longest
@@ -667,10 +669,10 @@ void fwriteMain(fwriteMainArgs args)
   // could be console output) and writing column names to it.
 
   double t0 = wallclock();
-  size_t maxLineLen = eolLen + args.ncol*(2*(doQuote!=0) + 1/*sep*/);
+  size_t maxLineLen = eolLen + args.ncol*(2*(doQuote!=0) + lensep);
   if (args.doRowNames) {
     maxLineLen += args.rowNames ? getMaxStringLen(args.rowNames, args.nrow)*2 : 1+(int)log10(args.nrow);  // the width of the row number
-    maxLineLen += 2*(doQuote!=0/*NA('auto') or true*/) + 1/*sep*/;
+    maxLineLen += 2*(doQuote!=0/*NA('auto') or true*/) + lensep;
   }
   for (int j=0; j<args.ncol; j++) {
     int width = writerMaxLen[args.whichFun[j]];
@@ -731,7 +733,7 @@ void fwriteMain(fwriteMainArgs args)
   headerLen += yamlLen;
   if (args.colNames) {
     for (int j=0; j<args.ncol; j++) headerLen += getStringLen(args.colNames, j)*2;  // *2 in case quotes are escaped or doubled
-    headerLen += args.ncol*(1/*sep*/+(doQuote!=0)*2) + eolLen + 3;  // 3 in case doRowNames and doQuote (the first blank <<"",>> column name)
+    headerLen += args.ncol*(lensep +(doQuote!=0)*2) + eolLen + 3;  // 3 in case doRowNames and doQuote (the first blank <<"",>> column name)
   }
   if (headerLen) {
     char *buff = malloc(headerLen);
@@ -744,13 +746,16 @@ void fwriteMain(fwriteMainArgs args)
       if (args.doRowNames) {
         // Unusual: the extra blank column name when row_names are added as the first column
         if (doQuote!=0/*'auto'(NA) or true*/) { *ch++='"'; *ch++='"'; } // to match write.csv
-        *ch++ = sep;
+        if (lensep)
+            *ch++ = sep;
       }
       for (int j=0; j<args.ncol; j++) {
         writeString(args.colNames, j, &ch);
-        *ch++ = sep;
+        if (lensep)
+            *ch++ = sep;
       }
-      ch--; // backup over the last sep
+      if (lensep)
+        ch--; // backup over the last sep
       write_chars(args.eol, &ch);
     }
     if (f==-1) {
@@ -892,15 +897,18 @@ void fwriteMain(fwriteMainArgs args)
           } else {
             writeString(args.rowNames, i, &ch);
           }
-          *ch++=sep;
+          if (lensep)
+            *ch++=sep;
         }
         // Hot loop
         for (int j=0; j<args.ncol; j++) {
           (args.funs[args.whichFun[j]])(args.columns[j], i, &ch);
-          *ch++ = sep;
+          if (lensep)
+            *ch++ = sep;
         }
         // Tepid again (once at the end of each line)
-        ch--;  // backup onto the last sep after the last column. ncol>=1 because 0-columns was caught earlier.
+        if (lensep)
+          ch--;  // backup onto the last sep after the last column. ncol>=1 because 0-columns was caught earlier.
         write_chars(args.eol, &ch);  // overwrite last sep with eol instead
       }
       // compress buffer if gzip
